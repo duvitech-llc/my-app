@@ -1,6 +1,7 @@
 import './App.css';
-import MyOpencvComponent from './components/MyOpencvComponent'
 import { OpenCvProvider } from 'opencv-react'
+import CanvasWrapper from './components/CanvasWrapper';
+import PhotoSelector from './components/PhotoSelector';
 
 
 function App() {
@@ -11,7 +12,10 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <OpenCvProvider onLoad={onLoad}> <MyOpencvComponent /></OpenCvProvider>
+        <OpenCvProvider onLoad={onLoad}> 
+          <PhotoSelector />
+          <CanvasWrapper />
+        </OpenCvProvider>
        
       </header>
     </div>
