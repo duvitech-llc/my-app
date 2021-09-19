@@ -10,12 +10,20 @@ export const CanvasWrapper = () => {
   const [trackingInitialized, setTrackingInitialized] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [scaleFactor, setScaleFactor] = useState(1.1);
+  const [scale, setScale] = useState(1.0);
   const [points, setPoints] = useState([]);
   const [coordinateUpdated, setCoordinateUpdated] = useState(false);
   const [anchor, setAnchor] = useState(null);
   const [closest, setClosest] = useState(null);
+  const [lastMove, setLastMove] = useState(null);
+  const [unit, setUnit] = useState({ x: 0, y: 0 });
+  const [needToScroll, setNeedToScroll] = useState(false);
+  const [intensity, setIntensity] = useState(0);
+  const [imageBoundingBox, setImageBoundingBox] = useState(null);
+  const [canvasPoint, setCanvasPoint] = useState(null);
+  const [resized, setResized] = useState(false);
 
-
+  const [scrollThreshold,] = useState(20);
   const [selectionColors,] = useState(["red", "blue", "green", "yellow"]);
   const [anchorMarkerColor,] = useState("rgba(255,255,255,0.01)");
   const [selectionRadius,] = useState(10);
@@ -36,9 +44,10 @@ export const CanvasWrapper = () => {
     };
   };
   
-  const translatePoint = (point, canvas) => {
-    console.log(point);
-    console.log(canvas);
+  const translatePoint = (point) => {
+    const canvas = canvasWrapper.current;
+    console.log("translatePoint ",point);
+    console.log("getBoundingClientRect ",canvas.getBoundingClientRect());
     return {
       x: (point.x * image.width) / canvas.getBoundingClientRect().width,
       y: (point.y * image.height) / canvas.getBoundingClientRect().height,
@@ -86,7 +95,7 @@ export const CanvasWrapper = () => {
 
     canvas.width = Math.floor(width * scale);
     canvas.height = Math.floor(width * 0.75 * scale);
-    myRenderFunc();
+    setResized(true);
   };
 
 
@@ -136,6 +145,28 @@ export const CanvasWrapper = () => {
 
   };
 
+  const erasePoint = (p) => {
+    if (!p) return;
+
+    const canvas = canvasWrapper.current;
+    const r = selectionRadius;
+
+    let a = p;
+
+    let test = function(a, r) {
+      return { x: Math.max(a.x - r - 1, 0), y: Math.max(a.y - r - 1, 0) };
+    };
+
+    const d = test(a, r);
+    const ds = { x: 2 * r + 2, y: 2 * r + 2 };
+
+    const i = toImageDomain(test(p, r), image, imageBoundingBox);
+    const is = toImageDomain(ds, image, imageBoundingBox);
+
+    const context = canvasWrapper.current.getContext("2d");
+    context.drawImage(image, i.x, i.y, is.x, is.y, d.x, d.y, ds.x, ds.y);
+  };
+
   const drawPoints = () => {
     points.forEach((point, i) =>
       drawPoint(point, selectionColors[i], selectionRadius, true)
@@ -150,6 +181,7 @@ export const CanvasWrapper = () => {
       canvas.width / img.width,
       canvas.height / img.height
     );
+    setScale(scale);
     
     let bb = {
       x: canvas.width / 2 - (img.width / 2) * scale,
@@ -157,6 +189,8 @@ export const CanvasWrapper = () => {
       width: img.width * scale,
       height: img.height * scale,
     };
+
+    setImageBoundingBox(bb);
 
     context.drawImage(img, bb.x, bb.y, bb.width, bb.height);
   };
@@ -181,17 +215,14 @@ export const CanvasWrapper = () => {
     context.restore();
 
     scaleToFit(context, image);
-    console.log("exit redraw");
-  };
 
-  const findElementOffset = (e) => {
-    var pos = { x: e.x, y: e.y };
-    if (typeof e.offsetParent != "undefined") {
-      for (pos = { x: 0, y: 0 }; e; e = e.offsetParent) {
-        pos = { x: pos.x + e.offsetLeft, y: pos.y + e.offsetTop };
-      }
-    }
-    return pos;
+    // draw circle for last mouse pointer
+    context.beginPath();
+    context.arc(last.x, last.y, 5, 0, 2 * Math.PI, false);
+    context.fillStyle = 'yellow'
+    context.fill()
+    
+    console.log("exit redraw");
   };
 
   const zoom = (clicks) => {
@@ -211,11 +242,17 @@ export const CanvasWrapper = () => {
   };
 
   const getPoint = (e) => {
-    if (!e) e = window.event;
+    if (!e)
+    {
+      console.log("Setting Windows event");
+      e = window.event;
+    }
 
+    console.log("EVT: ", e);
     const canvas = canvasWrapper.current;
     var pos = { x: 0, y: 0 };
     if (e.changedTouches) {
+      console.log("Changed Touches");
       pos = { x: e.changedTouches[0].pageX, y: e.changedTouches[0].pageY };
     } else if (e.pageX || e.pageY) {
       pos = { x: e.pageX, y: e.pageY };
@@ -230,16 +267,15 @@ export const CanvasWrapper = () => {
       };
     }
 
-    var topLeftCorner = findElementOffset(canvas);
-    
-    return translatePoint(
-      {
-        x: Math.max(pos.x - topLeftCorner.x, 0),
-        y: Math.max(pos.y - topLeftCorner.y, 0),
-      },
-      canvas,
-      image
-    );
+    console.log("Point: ", pos);
+    let bbCanvas = canvas.getBoundingClientRect();
+    var topLeftCorner = {x: bbCanvas.left, y: bbCanvas.top};
+    console.log("TopLeftCorner: ", topLeftCorner);
+    console.log("Scale: ", scale);
+    return (translatePoint({
+      x: Math.max(pos.x - topLeftCorner.x, 0),
+      y: Math.max(pos.y - topLeftCorner.y, 0),
+    }));
   };
 
   const mousedown = (evt) => {
@@ -249,24 +285,23 @@ export const CanvasWrapper = () => {
 
     const context = canvasWrapper.current.getContext("2d");
     const canvas = canvasWrapper.current;
-    
+
+    let tempLast = getPoint(evt);
+    setLast(tempLast);
+
+    console.log("lastPoint: ", tempLast);    
 
     if(!imageReady){
       console.log("image not ready");
       return;
     }
 
-
-    let tempLast = getPoint(evt);
-    console.log("lastPoint: ", tempLast);
-    setLast(tempLast);
-
     let pt = fromImageDomain(tempLast, image, canvas);
     let z = context.transformedPoint(pt.x, pt.y);
 
     context.save();
 
-    zoom(8);
+    zoom(10);
     setZoomed(true);
     redraw();
 
@@ -293,8 +328,27 @@ export const CanvasWrapper = () => {
   const mousemove = (evt) => {
     evt.preventDefault();
     if (zoomed === false) return;
-    console.log("mousemove zoom: " + zoomed);
+    const context = canvasWrapper.current.getContext("2d");
+    const canvas = canvasWrapper.current;
 
+    const imagePt = getPoint(evt);
+    if (imagePt === lastMove) return;
+    setLastMove(imagePt);
+
+    const canvasPt = fromImageDomain(imagePt, image, canvas);
+    let z = context.transformedPoint(canvasPt.x, canvasPt.y);
+    setCanvasPoint(z);
+    const test = canvasPt;
+    const diff = { x: anchor.x - test.x, y: anchor.y - test.y };
+    const magnitude = Math.hypot(diff.x, diff.y);
+
+    setUnit({ x: diff.x / magnitude, y: diff.y / magnitude });
+
+    setIntensity(Math.max(0, magnitude - scrollThreshold));
+    setIntensity(Math.min(intensity / 100, 1));
+
+    setNeedToScroll(magnitude >= scrollThreshold);
+    return;
   };
 
   const mouseup = (evt) => {
@@ -306,7 +360,7 @@ export const CanvasWrapper = () => {
       return;
     } 
     console.log("unzoom");
-    zoom(-8);
+    zoom(-10);
     setZoomed(false);
     setAnchor(null);
     setClosest(null);
@@ -409,22 +463,6 @@ export const CanvasWrapper = () => {
     };
   };
 
-  const removeEventListeners = () => {
-    const canvas = canvasWrapper.current;
-    canvas.removeEventListener("mousedown", mousedown, false);
-    canvas.removeEventListener("mousemove", mousemove, false);
-    canvas.removeEventListener("mouseup", mouseup, false);
-
-  };
-
-  const addEventListeners = () => {
-    const canvas = canvasWrapper.current;
-    canvas.addEventListener("mousedown", mousedown, false);
-    canvas.addEventListener("mousemove", mousemove, false);
-    canvas.addEventListener("mouseup", mouseup, false);
-
-  };
-
   const setup = () => {
     console.log("enter setup");
     if(!imageUrl){
@@ -458,28 +496,49 @@ export const CanvasWrapper = () => {
   const myRenderFunc = () => {
     setup();
     redraw();
-
+    setResized(false);
   };
 
 
   useEffect(() => {
     console.log("render");
+    window.onresize = null
     window.onresize = fixDpi;
     fixDpi();
-    myRenderFunc();
-    removeEventListeners();
-    addEventListeners();
   }, []);
 
   useEffect(() => {
-    removeEventListeners();
-    addEventListeners();
     myRenderFunc();
-  }, [zoomed, imageReady]);
+  }, [zoomed, imageReady, resized]);
+
+  useEffect(() => {
+    if (needToScroll) {
+      redraw();
+    }else{
+      const canvas = canvasWrapper.current;
+      const z = canvasPoint;
+      if (!(closest === null)) {
+        erasePoint(points[closest]);
+        z.x = Math.max(z.x, 0);
+        z.y = Math.max(z.y, 0);
+        z.x = Math.min(z.x, canvas.width);
+        z.y = Math.min(z.y, canvas.height);
+        points.splice(closest, 1, z);
+        drawPoint(z, selectionColors[closest]);
+      }
+    }
+    setNeedToScroll(needToScroll);
+  }, [needToScroll]);
+
+
 
   return (
     <div className="my-canvas-wrapper">
-      <canvas ref={canvasWrapper} />
+      <canvas ref={canvasWrapper} 
+        onMouseDown={(evt) => mousedown(evt)}
+        onMouseUp={(evt) => mouseup(evt)}
+        onMouseMove={(evt) => mousemove(evt)}
+      />
       <slot></slot>
     </div>
   )
