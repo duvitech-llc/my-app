@@ -2,6 +2,6 @@
 
 canvas {
   touch-action: none;
-  outline: black 1px solid;
-  width: 100%;
+  outline: black 2px solid;
+  width: 60%;
 }

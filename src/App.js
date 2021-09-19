@@ -1,4 +1,5 @@
 import './App.css';
+import { Row, Col } from 'antd';
 import { OpenCvProvider } from 'opencv-react'
 import CanvasWrapper from './components/CanvasWrapper';
 import PhotoSelector from './components/PhotoSelector';
@@ -11,13 +12,18 @@ function App() {
   }
   return (
     <div className="App">
-      <header className="App-header">
-        <OpenCvProvider onLoad={onLoad}> 
-          <PhotoSelector />
-          <CanvasWrapper />
-        </OpenCvProvider>
-       
-      </header>
+      <OpenCvProvider onLoad={onLoad}> 
+        <Row justify="center">
+          <Col xxl={24} xs={24}>
+            <PhotoSelector />
+          </Col>
+        </Row>
+        <Row justify="center">
+          <Col xxl={24} xs={24}>
+            <CanvasWrapper />
+          </Col>
+        </Row>
+      </OpenCvProvider>
     </div>
   );
 }
